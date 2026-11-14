@@ -1,102 +1,87 @@
-# Token Radar — token-radar-01
+# Token Launch Radar
 
-A token launch radar: it reads a sealed DefiLlama snapshot of every protocol at or
-above $5M of TVL, ranks the protocols that record no token by what their launch would
-be worth, and hands in a web dashboard with the board, a detail view for each protocol
-and the steps to farm it.
+A dashboard that ranks pre-token protocols by implied value, using only the
+figures in a DefiLlama-style snapshot. The idea is simple: a protocol without
+a token yet can be priced by looking at what the market already pays for
+similar protocols that do have one.
 
-## How to run
+## Model
+
+Every protocol on the board is pre-token (no market cap, no CoinGecko id, no
+symbol in the snapshot). Bridges, liquid staking and restaking, restaked BTC
+and CEXes are left out, as are names that end in a version marker, carry a
+whole word like "wrapped" or "staked", or start with an exchange name. The
+40 watchlist slugs are always included; every other rankable pre-token
+protocol joins them.
+
+**Category multiple.** Within a protocol's category, take the median of
+market-cap-over-TVL across the snapshot's own live-token protocols. Clamp
+that median to 0.02–2.0, then pull it toward the global median (the median
+over all live-token protocols) according to how many peers support it: 5 or
+more peers stand alone, 3–4 blend 70% category / 30% global, 1–2 blend 30%
+category / 70% global, and with no peers the global median is used. Clamp
+the result to 0.02–2.0 again.
+
+**Growth.** The 7-day TVL change in percent, clamped to −60…120, then the
+multiplier is 1 + (growth / 100) × 0.5.
+
+**Maturity.** Age in whole days from `listed_at` to the snapshot date
+(unknown age counts as 365 days); the multiplier is
+0.6 + min(age, 1095) / 1095 × 0.4.
+
+**Chains.** 1 + min(chains − 1, 4) × 0.03.
+
+**Implied value.** max(1, round(TVL × multiple × growth × maturity × chains)).
+Rows are sorted by implied value descending, ties broken by slug ascending.
+
+The 24 live-token protocols with the largest market cap (excluding CEX) are
+shown separately with the market's own values and are never ranked.
+
+**Farm steps.** Each row carries six concrete steps built from its own
+record: capital by TVL ($250 at $5B+, $150 at $1B+, $100 at $100M+, else
+$50), hold time by age (60 days under 180 days old, 45 under a year, else
+30), gas by main chain (about $8 on Ethereum, $0.10 on Solana, $2 on
+Bitcoin or Tron, $1 on the big L2s, $3 elsewhere), and the action by
+category (supply, provide liquidity, bridge, stake, hedge, and so on).
+
+## Run it
+
+Requires Node 22 or newer, standard library only.
 
 ```sh
-mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input <snapshot.json>
+MAKEFUN_OUTPUT_DIR=out node main.ts --input <path-to-snapshot.json>
+node check-gate.mjs out
 ```
 
-`main.ts` (Node 22, standard library only) writes `board.json`, `data.js`, copies
-`dashboard/` and `screenshots/` into the output directory and writes `dossier.json`
-with `vendor/makefun-board.ts`. The program is deterministic: two runs on the same
-snapshot write the same bytes.
+`--input` accepts a `snapshot.json` file or a directory holding one;
+`--output` (or `MAKEFUN_OUTPUT_DIR`) picks the output directory
+(default `/output`). The program self-checks the board first — every
+watchlist slug covered, ranks exactly 1…N, implied values never rising with
+rank, not all equal, farm steps 3–12 strings of 20–600 characters, implied
+values positive whole numbers — and exits non-zero if any check fails.
 
-## What it reads
+Outputs in the output directory:
 
-`snapshot.json` is the sealed protocol data (758 protocols, fetched once from
-DefiLlama's public protocols endpoint, `as_of` 2026-11-14). Each protocol carries ten
-fields: `slug`, `name`, `category`, `chains`, `tvl_usd`, `change_7d`, `mcap_usd`,
-`listed_at`, `gecko_id`, `symbol`. The snapshot's `watchlist` names 40 protocols: TVL
-at or above the $50,000,000 floor, no token recorded, and not a wrapped, staked or
-bridged product of one that trades.
+- `board.json` — the ranked rows with model breakdown and farm steps
+- `data.js` — the dashboard dataset as `window.RADAR`
+- `dashboard/` — the static dashboard (no network use)
+- `screenshots/` — the three dashboard screenshots
+- `dossier.json` — the submission dossier
 
-## The board
+## Dashboard
 
-198 rows: all 40 watchlist protocols plus 158 further pre-token protocols below the
-floor. A protocol is rankable when it records no token (`mcap_usd`, `gecko_id` and
-`symbol` all null) and is not a wrapped, staked or bridged product of a token that
-already trades (category not Bridge, Canonical Bridge, Liquid Staking, Liquid
-Restaking, Restaked BTC or CEX; name not versioned, carrying no whole word wrapped,
-staked or staking, and not starting with an exchange's name). Live-token protocols are
-kept apart in the dashboard's Live token view, shown with their market caps, never
-mixed into the ranking. "No token" means the snapshot records none: a protocol may
-still have a token its DefiLlama record does not carry.
+Open `out/dashboard/index.html` (it reads `../data.js`, no fetch, no
+network). The board table sorts by rank, implied value, TVL and 7-day
+change, and filters by search text, a watchlist-only toggle and category.
+Clicking a protocol opens its detail view (`#detail-<slug>`) with the model
+breakdown and farm steps; `#filter=watchlist` shows the filtered board and
+`#live` the live-token peers. A methodology panel states every constant.
 
-## The model (radar-2)
+## Verification
 
-Implied value follows only from the snapshot's own figures, through comparable
-multiples — no protocol name is ever special-cased:
-
-```
-multiple   = the category's median mcap/TVL among the snapshot's own live-token
-             protocols, clamped to [0.02, 2.0] first, then shrunk toward the global
-             median (0.21x) by support: 5+ live comps stand alone, 3-4 blend 70/30,
-             1-2 blend 30/70, none use the global median
-growth     = clamp(change_7d, -60, 120) per cent
-growthMult = 1 + (growth / 100) x 0.5
-maturity   = 0.6 + min(age_days, 1095) / 1095 x 0.4   (age_days unknown: 365)
-chains     = 1 + min(chains - 1, 4) x 0.03
-implied    = max(1, round(tvl_usd x multiple x growthMult x maturity x chains))
-```
-
-Age is the time since DefiLlama began tracking the protocol — the best record of how
-long it has run with no token. The multiples come from the snapshot itself, so a new
-snapshot re-prices every row. The dashboard's methodology panel lists every category's
-median multiple, its number of live comps and the multiple actually used, and the
-detail view of each protocol shows its own breakdown and recomputes the number, so
-the page's code and `board.json` visibly agree.
-
-Worked example (rank 1, Steakhouse Financial): TVL $2,754.0M x Risk Curators
-multiple 0.75x (1 live comp, shrunk toward the global median) x growth 0.989 x
-maturity 1.00 x chains 1.00 = $1,825,794,718.
-
-## Farm plans
-
-Every row carries six steps, each with a cost and a time, derived from the protocol's
-own record (category, main chain, TVL tier, age) — never from a hand-written list of
-names. Capital scales with TVL ($50–$250), gas follows the main chain (Ethereum
-~$8, L2s ~$1, Solana ~$0.10), and the hold window is longer for younger protocols
-(60 days under 180 days old, 45 under a year, 30 otherwise). The plan never promises
-an airdrop: it says what to do and what it costs, and to claim only from the link the
-protocol itself publishes.
-
-## The dashboard
-
-`dashboard/` is a static page with no network: `index.html`, `app.css`, `app.js` read
-`data.js` (written beside the page) and render the ranked board, a category chart, the
-methodology panel and a detail dialog for every protocol. Filters: search, category,
-chain, TVL floor, seven-day growth, watchlist-only, and a Pre-token / Live token
-switch. Every column sorts. The page state lives in the URL hash, so a board, a
-filtered view or a protocol's detail view is a link.
-
-## Files
-
-- `main.ts` — the entry program
-- `lib/model.ts` — the radar-2 model, the board builder and the farm plans
-- `vendor/makefun-board.ts` — make.fun's dossier library, copied byte for byte
-- `dashboard/` — the static page (`index.html`, `app.css`, `app.js`)
-- `screenshots/` — the board, a protocol's detail view, a filtered view
-- `BUILD_LOG.md` — the build's decisions and verification results
-
-## Re-authoring
-
-The entry was re-authored in a fresh session after the competition opened
-(2026-11-14 10:00 UTC), because the pre-submit check refuses build sessions and
-repositories from before opening. The files above were written again in that
-session — same radar-2 model, same dashboard, same outputs — and the reproduce
-commands were re-run to confirm all seven gate rows pass.
+Reproduced 2026-11-14 after the 10:00 UTC opening with the commands above.
+Result: 198 board rows with 40 of 40 watchlist slugs covered, and all 7
+gate rows passing — dashboard files 3 files / 13,896 bytes, board file 198
+rows, ranks 1…198 non-increasing, coverage 40/40, farm steps in range,
+screenshots 1440×800 (141 KB, 118 KB, 140 KB), dossier 560,984 bytes and
+matching a rebuild. Combined implied value $7,637,396,090.

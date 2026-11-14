@@ -3,13 +3,55 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Token Radar: pre-token protocols ranked by implied value</title>
+<title>Token Launch Radar</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<a class="skip" href="#board">Skip to the board</a>
-<main id="board" tabindex="-1" aria-busy="true"></main>
-<noscript><p style="padding: 16px 20px;">Token Radar needs JavaScript: the board is rendered from data.js, the snapshot's own figures, with no network.</p></noscript>
+<header>
+<h1>Token Launch Radar</h1>
+<p id="as-of"></p>
+<nav>
+<a href="#" id="show-board">Board</a>
+<a href="#live" id="show-live">Live tokens</a>
+<a href="#method">Methodology</a>
+</nav>
+</header>
+<main>
+<noscript><p>This radar needs scripts enabled: the board is rendered from the dataset bundled with the page.</p></noscript>
+<section id="board-view">
+<div class="controls">
+<input type="search" id="search" placeholder="Search name, slug or category" aria-label="Search protocols">
+<label><input type="checkbox" id="watchlist-only"> Watchlist only</label>
+<select id="category-filter" aria-label="Filter by category"><option value="">All categories</option></select>
+</div>
+<p id="row-count"></p>
+<table>
+<thead><tr>
+<th data-sort="rank">Rank</th>
+<th>Protocol</th>
+<th>Category</th>
+<th data-sort="implied_value_usd" class="num">Implied value</th>
+<th data-sort="tvl_usd" class="num">TVL</th>
+<th data-sort="change_7d" class="num">7d change</th>
+<th>Age</th>
+</tr></thead>
+<tbody id="board-body"></tbody>
+</table>
+</section>
+<section id="detail" hidden></section>
+<section id="live-view" hidden>
+<h2>Live-token peers</h2>
+<p>The 24 largest live-token protocols by market cap (excluding CEX). Shown for comparison only; never ranked.</p>
+<table>
+<thead><tr><th>Protocol</th><th>Category</th><th class="num">Market cap</th><th class="num">TVL</th><th class="num">7d change</th></tr></thead>
+<tbody id="live-body"></tbody>
+</table>
+</section>
+<section id="method">
+<h2>Methodology</h2>
+<div id="method-body"></div>
+</section>
+</main>
 <script src="../data.js"></script>
 <script src="app.js"></script>
 </body>
